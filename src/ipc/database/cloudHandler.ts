@@ -313,7 +313,35 @@ export class CloudAccountRepo {
         .get('jetskiStateSync.agentManagerInitState') as { value: string } | undefined;
 
       if (!row || !row.value) {
-        throw new Error('jetskiStateSync.agentManagerInitState not found in database');
+        logger.warn(
+          'jetskiStateSync.agentManagerInitState not found. ' +
+            'Injecting minimal auth state only. User may need to complete onboarding in the IDE first.',
+        );
+
+        // Inject minimal state: auth status and onboarding flag only
+        const authStatus = {
+          name: account.name || account.email,
+          email: account.email,
+          apiKey: account.token.access_token,
+        };
+
+        db.prepare('INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)').run(
+          'antigravityAuthStatus',
+          JSON.stringify(authStatus),
+        );
+
+        db.prepare('INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)').run(
+          'antigravityOnboarding',
+          'true',
+        );
+
+        db.prepare('DELETE FROM ItemTable WHERE key = ?').run('google.antigravity');
+
+        logger.info(
+          `Injected minimal auth state for ${account.email} (no protobuf state available)`,
+        );
+
+        return; // Early return - skip protobuf manipulation
       }
 
       // 1. Decode Base64
