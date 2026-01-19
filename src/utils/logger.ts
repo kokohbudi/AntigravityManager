@@ -49,7 +49,12 @@ class Logger {
   private formatMessage(level: LogLevel, message: string, ...args: unknown[]): string {
     const timestamp = new Date().toISOString();
     const formattedArgs = args
-      .map((arg) => (typeof arg === 'object' ? safeStringify(arg) : String(arg)))
+.map((arg) => {
+        if (arg instanceof Error) {
+          return `${arg.message}\n${arg.stack}`;
+        }
+        return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
+      })
       .join(' ');
     return `[${timestamp}] [${level.toUpperCase()}] ${message} ${formattedArgs}`;
   }

@@ -53,7 +53,15 @@ export function initTray(mainWindow: BrowserWindow) {
   const inDevelopment = process.env.NODE_ENV === 'development';
   const iconPath = inDevelopment
     ? path.join(process.cwd(), 'src/assets/tray.png')
-    : path.join(process.resourcesPath, 'assets/tray.png');
+    : path.join(app.getAppPath(), 'resources/assets/tray.png');
+
+  logger.info(`[Tray] Init with icon path: ${iconPath}`);
+
+  if (require('fs').existsSync(iconPath)) {
+    logger.info('[Tray] Icon file exists');
+  } else {
+    logger.error('[Tray] Icon file NOT found');
+  }
 
   const icon = nativeImage.createFromPath(iconPath);
 

@@ -46,7 +46,7 @@ import { useTranslation } from 'react-i18next';
 
 export function CloudAccountList() {
   const { t } = useTranslation();
-  const { data: accounts, isLoading, isError } = useCloudAccounts();
+  const { data: accounts, isLoading, isError, error } = useCloudAccounts();
   const refreshMutation = useRefreshQuota();
   const deleteMutation = useDeleteCloudAccount();
   const addMutation = useAddGoogleAccount();
@@ -264,7 +264,12 @@ export function CloudAccountList() {
   }
 
   if (isError) {
-    return <div className="p-4 text-red-500">Failed to load cloud accounts.</div>;
+    return (
+      <div className="text-destructive rounded-md border p-4">
+        <p className="font-semibold">Failed to load cloud accounts</p>
+        <p className="text-sm">{error instanceof Error ? error.message : 'Unknown error'}</p>
+      </div>
+    );
   }
 
   return (

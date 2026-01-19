@@ -181,22 +181,31 @@ export class CloudAccountRepo {
       activeRows.forEach((r) => logger.info(`[DEBUG] Active Account: ${r.email} (${r.id})`));
 
       const accounts = await Promise.all(
-        rows.map(async (row) => ({
-          id: row.id,
-          provider: row.provider,
-          email: row.email,
-          name: row.name,
-          avatar_url: row.avatar_url,
-          token: JSON.parse(await decrypt(row.token_json)),
-          quota: row.quota_json ? JSON.parse(await decrypt(row.quota_json)) : undefined,
-          created_at: row.created_at,
-          last_used: row.last_used,
-          status: row.status,
-          is_active: Boolean(row.is_active),
-        })),
+        rows.map(async (row): Promise<CloudAccount | null> => {
+          try {
+            return {
+              id: row.id,
+              provider: row.provider,
+              email: row.email,
+              name: row.name,
+              avatar_url: row.avatar_url,
+              token: JSON.parse(await decrypt(row.token_json)),
+              quota: row.quota_json ? JSON.parse(await decrypt(row.quota_json)) : undefined,
+              created_at: row.created_at,
+              last_used: row.last_used,
+              status: row.status,
+              is_active: Boolean(row.is_active),
+            } as CloudAccount;
+          } catch (error) {
+            logger.error(`Failed to decrypt account ${row.email} (${row.id})`, error);
+            // If we can't decrypt, the account is effectively lost. 
+            // We return null and filter it out.
+            return null;
+          }
+        }),
       );
 
-      return accounts;
+      return accounts.filter((a): a is CloudAccount => a !== null);
     } finally {
       db.close();
     }
@@ -211,19 +220,24 @@ export class CloudAccountRepo {
 
       if (!row) return undefined;
 
-      return {
-        id: row.id,
-        provider: row.provider,
-        email: row.email,
-        name: row.name,
-        avatar_url: row.avatar_url,
-        token: JSON.parse(await decrypt(row.token_json)),
-        quota: row.quota_json ? JSON.parse(await decrypt(row.quota_json)) : undefined,
-        created_at: row.created_at,
-        last_used: row.last_used,
-        status: row.status,
-        is_active: Boolean(row.is_active),
-      };
+      try {
+        return {
+          id: row.id,
+          provider: row.provider,
+          email: row.email,
+          name: row.name,
+          avatar_url: row.avatar_url,
+          token: JSON.parse(await decrypt(row.token_json)),
+          quota: row.quota_json ? JSON.parse(await decrypt(row.quota_json)) : undefined,
+          created_at: row.created_at,
+          last_used: row.last_used,
+          status: row.status,
+          is_active: Boolean(row.is_active),
+        };
+      } catch (error) {
+        logger.error(`Failed to decrypt account ${row.email} (${row.id})`, error);
+        return undefined;
+      }
     } finally {
       db.close();
     }

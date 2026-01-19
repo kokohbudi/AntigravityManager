@@ -5,59 +5,166 @@ import { logger } from '../../utils/logger';
 
 const execAsync = promisify(exec);
 
+interface ProcessInfo {
+  pid: number;
+  name: string;
+  cmd: string;
+}
+
+/**
+ * Gets a list of running Antigravity processes, excluding the current process and the Manager itself.
+ */
+async function getRunningAntigravityProcesses(): Promise<ProcessInfo[]> {
+  const platform = process.platform;
+  const currentPid = process.pid;
+
+  try {
+    let output = '';
+    // Helper to get raw process list string
+    const getRawOutput = (): string => {
+      if (platform === 'win32') {
+        const psCommand = (cmdlet: string) =>
+          `powershell -NoProfile -Command "${cmdlet} Win32_Process -Filter \\"Name like 'Antigravity%'\\" | Select-Object ProcessId, Name, CommandLine | ConvertTo-Csv -NoTypeInformation"`;
+
+        try {
+          return execSync(psCommand('Get-CimInstance'), {
+            encoding: 'utf-8',
+            maxBuffer: 1024 * 1024 * 10,
+            stdio: ['pipe', 'pipe', 'ignore'],
+          });
+        } catch (e) {
+          // CIM failed (likely older OS), try WMI
+          try {
+            return execSync(psCommand('Get-WmiObject'), {
+              encoding: 'utf-8',
+              maxBuffer: 1024 * 1024 * 10,
+            });
+          } catch (innerE) {
+            throw e;
+          }
+        }
+      } else {
+        // Unix/Linux/macOS
+        // ps -A -o pid,comm,args
+        return execSync('ps -A -o pid,comm,args', {
+          encoding: 'utf-8',
+          maxBuffer: 1024 * 1024 * 10,
+        });
+      }
+    };
+
+    output = getRawOutput();
+    const processList: ProcessInfo[] = [];
+
+    if (platform === 'win32') {
+      // Parse CSV Output
+      const lines = output.trim().split(/\r?\n/);
+      // First line is headers "ProcessId","Name","CommandLine"
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line) continue;
+
+        // Regex to match CSV fields: "val1","val2","val3"
+        const match = line.match(/^"(\d+)","(.*?)","(.*?)"$/);
+
+        if (match) {
+          const pid = parseInt(match[1]);
+          const name = match[2];
+          const cmdLine = match[3];
+          processList.push({ pid, name, cmd: cmdLine || name });
+        }
+      }
+    } else {
+      const lines = output.split('\n');
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 2) continue;
+
+        const pid = parseInt(parts[0]);
+        if (isNaN(pid)) continue;
+        const rest = parts.slice(1).join(' '); // Comm + Args
+
+        // Basic filtering to reduce noise before detailed check
+        if (
+          rest.toLowerCase().includes('antigravity')
+        ) {
+          // On macOS/Linux, parts[1] is comm, rest is full args usually.
+          // specifically ps -A -o pid,comm,args means:
+          // PID COMMAND ARGS
+          // Actually ps output varies. 
+          // Let's rely on the fact that 'rest' contains the command line.
+          processList.push({ pid, name: parts[1], cmd: rest });
+        }
+      }
+    }
+
+    // Filter the list
+    return processList.filter((p) => {
+      // Exclude self
+      if (p.pid === currentPid) {
+        return false;
+      }
+
+      const cmdLower = p.cmd.toLowerCase();
+
+      // Exclude this electron app (if named Antigravity Manager explicitly or via path)
+      // We check for "Manager" in the command line or path, but be careful not to exclude "Antigravity" if the user put it in a folder "Manager"
+      // Safer check: The actual Antigravity app usually doesn't have "Manager" in its process name arguments unless it's a file path argument.
+      // But the Manager app definitely has it.
+      // Let's stick to the previous logic which seemed to work for exclusion: 
+      // "Antigravity Manager" is usually in the name or path of the manager app.
+      if (cmdLower.includes('antigravity manager')) {
+        return false;
+      }
+
+      // Match Antigravity
+      // Windows: Antigravity.exe
+      // macOS: Antigravity.app or Antigravity binary
+      // Linux: Antigravity binary
+
+      if (platform === 'win32') {
+        return (
+          p.cmd.includes('Antigravity.exe') ||
+          (cmdLower.includes('antigravity') && !cmdLower.includes('manager'))
+        );
+      } else if (platform === 'darwin') {
+        // macOS: 
+        // 1. .app bundle: /Applications/Antigravity.app
+        // 2. dev/binary: .../Antigravity
+        return (
+          p.cmd.includes('Antigravity.app') ||
+          (p.cmd.includes('Antigravity') && !cmdLower.includes('manager'))
+        );
+      } else {
+        // Linux
+        return p.cmd.includes('Antigravity') || cmdLower.includes('antigravity');
+      }
+    });
+
+  } catch (e) {
+    logger.error('Failed to list processes', e);
+    return [];
+  }
+}
+
 /**
  * Checks if the Antigravity process is running.
  * @returns {boolean} True if the Antigravity process is running, false otherwise.
  */
 export async function isProcessRunning(): Promise<boolean> {
   try {
-    const platform = process.platform;
-    let command = '';
+    const runningProcesses = await getRunningAntigravityProcesses();
+    const isRunning = runningProcesses.length > 0;
 
-    if (platform === 'win32' || isWsl()) {
-      // Use absolute path for tasklist to be safe on Windows too
-      const cmd = isWsl()
-        ? '/mnt/c/Windows/System32/tasklist.exe'
-        : process.env.SystemRoot // Usually C:\Windows
-          ? `${process.env.SystemRoot}\\System32\\tasklist.exe`
-          : 'tasklist';
-
-      command = `${cmd} /FI "IMAGENAME eq Antigravity.exe" /NH`;
-    } else {
-      // macOS and Linux (native)
-      command = 'pgrep -xi Antigravity';
+logger.debug(`isProcessRunning check: ${isRunning} (Found ${runningProcesses.length} processes)`);
+    if (isRunning) {
+      logger.debug(`Running processes: ${JSON.stringify(runningProcesses.map(p => p.pid + ':' + p.name))}`);
+    }
     }
 
-    logger.debug(`Checking process with command: ${command}`);
-    // Increased timeout to 4000ms to avoid flakiness with tasklist/wmic
-    try {
-      const { stdout } = await execAsync(command, { timeout: 4000 });
-      logger.debug(`Process check stdout: ${stdout.trim()}`);
-
-      if (platform === 'win32' || isWsl()) {
-        return stdout.includes('Antigravity.exe');
-      } else {
-        // pgrep returns PIDs if found, empty if not
-        return stdout.trim().length > 0;
-      }
-    } catch (cmdError) {
-      if (platform === 'win32' && !isWsl()) {
-        logger.warn('tasklist failed, trying wmic fallback...', cmdError);
-        // Fallback to wmic (filtered)
-        try {
-          const wmicCmd = 'wmic process where "name=\'Antigravity.exe\'" get ProcessId';
-          const { stdout } = await execAsync(wmicCmd, { timeout: 4000 });
-          return stdout.includes('ProcessId');
-        } catch (wmicError) {
-          logger.error('wmic fallback also failed', wmicError);
-          return false;
-        }
-      }
-      throw cmdError;
-    }
+    return isRunning;
   } catch (error) {
     logger.error('Error checking process status:', error);
-    // pgrep returns exit code 1 if no process found
     return false;
   }
 }
@@ -101,112 +208,7 @@ export async function closeAntigravity(): Promise<void> {
       }
     }
 
-    // Stage 2 & 3: Find and Kill remaining processes
-    // We use a more aggressive approach here but try to avoid killing ourselves
-    const currentPid = process.pid;
-
-    // Helper to list processes
-    const getProcesses = (): { pid: number; name: string; cmd: string }[] => {
-      try {
-        let output = '';
-        if (platform === 'win32') {
-          const psCommand = (cmdlet: string) =>
-            `powershell -NoProfile -Command "${cmdlet} Win32_Process -Filter \\"Name like 'Antigravity%'\\" | Select-Object ProcessId, Name, CommandLine | ConvertTo-Csv -NoTypeInformation"`;
-
-          try {
-            output = execSync(psCommand('Get-CimInstance'), {
-              encoding: 'utf-8',
-              maxBuffer: 1024 * 1024 * 10,
-              stdio: ['pipe', 'pipe', 'ignore'],
-            });
-          } catch (e) {
-            // CIM failed (likely older OS), try WMI
-            try {
-              output = execSync(psCommand('Get-WmiObject'), {
-                encoding: 'utf-8',
-                maxBuffer: 1024 * 1024 * 10,
-              });
-            } catch (innerE) {
-              // Both failed, throw original or log? Throwing lets the outer catch handle it (returning empty list)
-              throw e;
-            }
-          }
-        } else {
-          // Unix/Linux/macOS
-          output = execSync('ps -A -o pid,comm,args', {
-            encoding: 'utf-8',
-            maxBuffer: 1024 * 1024 * 10,
-          });
-        }
-
-        const processList: { pid: number; name: string; cmd: string }[] = [];
-
-        if (platform === 'win32') {
-          // Parse CSV Output
-          const lines = output.trim().split(/\r?\n/);
-          // First line is headers "ProcessId","Name","CommandLine"
-          // We start from index 1
-          for (let i = 1; i < lines.length; i++) {
-            const line = lines[i];
-            if (!line) {
-              continue;
-            }
-
-            // Regex to match CSV fields: "val1","val2","val3"
-            const match = line.match(/^"(\d+)","(.*?)","(.*?)"$/);
-
-            if (match) {
-              const pid = parseInt(match[1]);
-              const name = match[2];
-              const cmdLine = match[3];
-
-              processList.push({ pid, name, cmd: cmdLine || name });
-            }
-          }
-        } else {
-          const lines = output.split('\n');
-          for (const line of lines) {
-            const parts = line.trim().split(/\s+/);
-            if (parts.length < 2) continue;
-
-            const pid = parseInt(parts[0]);
-            if (isNaN(pid)) continue;
-            const rest = parts.slice(1).join(' ');
-            if (rest.includes('Antigravity') || rest.includes('antigravity')) {
-              processList.push({ pid, name: parts[1], cmd: rest });
-            }
-          }
-        }
-        return processList;
-      } catch (e) {
-        logger.error('Failed to list processes', e);
-        return [];
-      }
-    };
-
-    const targetProcessList = getProcesses().filter((p) => {
-      // Exclude self
-      if (p.pid === currentPid) {
-        return false;
-      }
-      // Exclude this electron app (if named Antigravity Manager or antigravity-manager)
-      if (p.cmd.includes('Antigravity Manager') || p.cmd.includes('antigravity-manager')) {
-        return false;
-      }
-      // Match Antigravity (but not manager)
-      if (platform === 'win32') {
-        return (
-          p.cmd.includes('Antigravity.exe') ||
-          (p.cmd.includes('antigravity') && !p.cmd.includes('manager'))
-        );
-      } else {
-        // Explicit !manager check for Linux/macOS to be defensive
-        return (
-          (p.cmd.includes('Antigravity') || p.cmd.includes('antigravity')) &&
-          !p.cmd.includes('manager')
-        );
-      }
-    });
+    const targetProcessList = await getRunningAntigravityProcesses();
 
     if (targetProcessList.length === 0) {
       logger.info('No Antigravity processes found running.');

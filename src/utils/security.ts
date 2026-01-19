@@ -5,31 +5,78 @@ import { logger } from './logger';
 const SERVICE_NAME = 'AntigravityManager';
 const ACCOUNT_NAME = 'MasterKey';
 
+import fs from 'fs';
+import path from 'path';
+import { getAgentDir } from './paths';
+
 // Cache the key in memory to avoid frequent system calls
 let cachedMasterKey: Buffer | null = null;
 
 async function getOrGenerateMasterKey(): Promise<Buffer> {
   if (cachedMasterKey) return cachedMasterKey;
 
+  // Strategy 1: Try Keytar (System Keychain)
   try {
-    let hexKey = await keytar.getPassword(SERVICE_NAME, ACCOUNT_NAME);
-
-    if (!hexKey) {
-      logger.info('Security: Generating new master key...');
-      // Generate 256-bit key (32 bytes)
-      const buffer = crypto.randomBytes(32);
-      hexKey = buffer.toString('hex');
-      await keytar.setPassword(SERVICE_NAME, ACCOUNT_NAME, hexKey);
+    const hexKey = await keytar.getPassword(SERVICE_NAME, ACCOUNT_NAME);
+    if (hexKey) {
+      cachedMasterKey = Buffer.from(hexKey, 'hex');
+      return cachedMasterKey;
     }
-
-    cachedMasterKey = Buffer.from(hexKey, 'hex');
-    return cachedMasterKey;
   } catch (error) {
-    logger.error('Security: Failed to access keychain/credential manager', error);
-    // Fallback? If we can't store the key, we can't persistently encrypt.
-    // For now, throw to prevent data loss (better not to write than to write something we can't decrypt later or write plain text when promised encrypted)
-    throw new Error('Key management system unavailable');
+    logger.warn('Security: Failed to read from keychain, falling back to file storage.', error);
   }
+
+  // Strategy 2: File-based fallback
+  const fallbackPath = path.join(getAgentDir(), 'master.key');
+
+  if (fs.existsSync(fallbackPath)) {
+    try {
+      const hexKey = fs.readFileSync(fallbackPath, 'utf-8').trim();
+      if (hexKey) {
+        cachedMasterKey = Buffer.from(hexKey, 'hex');
+        return cachedMasterKey;
+      }
+    } catch (e) {
+      logger.error('Security: Failed to read fallback key file', e);
+    }
+  }
+
+  // Strategy 3: Generate New Key
+  logger.info('Security: Generating new master key...');
+  const buffer = crypto.randomBytes(32);
+  const hexKey = buffer.toString('hex');
+  cachedMasterKey = Buffer.from(hexKey, 'hex');
+
+  // Try to save to Keytar first
+  let keytarSaved = false;
+  try {
+    await keytar.setPassword(SERVICE_NAME, ACCOUNT_NAME, hexKey);
+    keytarSaved = true;
+  } catch (error) {
+    logger.warn('Security: Failed to save to keychain, attempting to save to file.', error);
+  }
+
+  // If Keytar failed or we are in fallback mode anyway (implied by execution flow if we didn't return earlier)
+  // Actually, if keytar worked for saving, great. But if we are here, it likely means we either generated a fresh key (first run) OR fell back.
+  // If we fell back during READ, we should save to FILE too, to be consistent?
+  // No, if we generated a NEW key, we try keytar. If that fails, we MUST save to file.
+
+  if (!keytarSaved) {
+    try {
+      const agentDir = getAgentDir();
+      if (!fs.existsSync(agentDir)) {
+        fs.mkdirSync(agentDir, { recursive: true });
+      }
+      // write with restricted permissions (0o600 = read/write only by owner)
+      fs.writeFileSync(fallbackPath, hexKey, { encoding: 'utf-8', mode: 0o600 });
+      logger.info('Security: Master key saved to fallback file.');
+    } catch (e) {
+      logger.error('Security: Failed to save fallback key file', e);
+      throw new Error('Critical: Unable to save master key to keychain or file.');
+    }
+  }
+
+  return cachedMasterKey;
 }
 
 const ALGORITHM = 'aes-256-gcm';
