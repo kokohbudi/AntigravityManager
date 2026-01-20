@@ -49,10 +49,21 @@ export class CloudMonitorService {
         // 2. Fetch Quota
         // We delay slightly between requests to act human/avoid spike
         await new Promise((r) => setTimeout(r, 1000));
-        const quota = await GoogleAPIService.fetchQuota(accessToken);
+        const quota = await GoogleAPIService.fetchQuota(accessToken, account.email, account.is_active);
 
         // 3. Update DB
         await CloudAccountRepo.updateQuota(account.id, quota);
+
+        // EXTRA: Update tray if this is the active account
+        // We re-fetch to see if it is still active to be safe
+        const freshAccount = await CloudAccountRepo.getAccount(account.id);
+        if (freshAccount && freshAccount.is_active) {
+          // Check if tray handler is available (it is in ipc/tray)
+          // We use require to avoid potential circular dependency issues at top-level if any,
+          // though likely fine.
+          const { updateTrayMenu } = require('../ipc/tray/handler');
+          updateTrayMenu(freshAccount);
+        }
       } catch (error) {
         logger.error(`Monitor: Failed to update ${account.email}`, error);
         // Could mark status as 'error' or 'rate_limited' if 429

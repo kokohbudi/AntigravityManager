@@ -70,7 +70,11 @@ export async function addGoogleAccount(authCode: string): Promise<CloudAccount> 
 
     // 5. Initial Quota Check (Async, best effort)
     try {
-      const quota = await GoogleAPIService.fetchQuota(account.token.access_token);
+      const quota = await GoogleAPIService.fetchQuota(
+        account.token.access_token,
+        account.email,
+        true, // Initial add is considered active for notification
+      );
       account.quota = quota;
       await CloudAccountRepo.updateQuota(account.id, quota);
       notifyTrayUpdate(account);
@@ -120,7 +124,7 @@ export async function refreshAccountQuota(accountId: string): Promise<CloudAccou
   }
 
   try {
-    const quota = await GoogleAPIService.fetchQuota(account.token.access_token);
+    const quota = await GoogleAPIService.fetchQuota(account.token.access_token, account.email, account.is_active);
     account.quota = quota;
     await CloudAccountRepo.updateQuota(account.id, quota);
     notifyTrayUpdate(account);
@@ -140,7 +144,7 @@ export async function refreshAccountQuota(accountId: string): Promise<CloudAccou
         await CloudAccountRepo.updateToken(account.id, account.token);
 
         // Retry Quota
-        const quota = await GoogleAPIService.fetchQuota(account.token.access_token);
+        const quota = await GoogleAPIService.fetchQuota(account.token.access_token, account.email, account.is_active);
         account.quota = quota;
         await CloudAccountRepo.updateQuota(account.id, quota);
         return account;

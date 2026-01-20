@@ -81,9 +81,18 @@ export class AutoSwitchService {
       if (nextAccount) {
         logger.info(`AutoSwitch: Switching to ${nextAccount.email}...`);
 
-        // Notify user (via toast? we are in main process... IPC event?)
-        // Ideally we send an IPC event to renderer.
-        // For now, logic first.
+        // Notify user via osascript
+        const { exec } = require('child_process');
+        const titleSafe = 'Auto Switch Warning';
+        const bodySafe = `Switching to ${nextAccount.email} in 30 seconds due to low quota.`;
+        const script = `display notification "${bodySafe}" with title "${titleSafe}" sound name "default"`;
+
+        exec(`osascript -e '${script}'`, (err: any) => {
+          if (err) logger.error('Failed to send switch warning notification', err);
+        });
+
+        // Wait 30 seconds
+        await new Promise((resolve) => setTimeout(resolve, 30000));
 
         await switchCloudAccount(nextAccount.id);
 

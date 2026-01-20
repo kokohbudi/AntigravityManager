@@ -156,10 +156,9 @@ export async function isProcessRunning(): Promise<boolean> {
     const runningProcesses = await getRunningAntigravityProcesses();
     const isRunning = runningProcesses.length > 0;
 
-logger.debug(`isProcessRunning check: ${isRunning} (Found ${runningProcesses.length} processes)`);
+    logger.debug(`isProcessRunning check: ${isRunning} (Found ${runningProcesses.length} processes)`);
     if (isRunning) {
       logger.debug(`Running processes: ${JSON.stringify(runningProcesses.map(p => p.pid + ':' + p.name))}`);
-    }
     }
 
     return isRunning;

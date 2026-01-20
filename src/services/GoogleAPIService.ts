@@ -1,5 +1,6 @@
 import { ConfigManager } from '../ipc/config/manager';
 import { ProxyAgent } from 'undici';
+import { exec } from 'child_process';
 
 // --- Constants & Config ---
 
@@ -216,7 +217,11 @@ export class GoogleAPIService {
   /**
    * Core logic: Fetches detailed model quota information.
    */
-  static async fetchQuota(accessToken: string): Promise<QuotaData> {
+  static async fetchQuota(accessToken: string, email?: string, isActive: boolean = false): Promise<QuotaData> {
+    if (email) {
+      console.log(`[GoogleAPIService] Fetching quota for: ${email}`);
+    }
+
     // 1. Get Project ID (Critical)
     const projectId = await this.fetchProjectId(accessToken);
 
@@ -270,18 +275,52 @@ export class GoogleAPIService {
 
         const data = (await response.json()) as { models: Record<string, ModelInfoRaw> };
         const result: QuotaData = { models: {} };
-
+        let notification = '';
         // Parse relevant models
         for (const [name, info] of Object.entries(data.models || {})) {
           if (info.quotaInfo) {
             const fraction = info.quotaInfo.remainingFraction ?? 0;
             const percentage = Math.floor(fraction * 100);
             const resetTime = info.quotaInfo.resetTime || '';
+            let formattedResetTime = resetTime;
+            try {
+              if (resetTime) {
+                formattedResetTime = new Date(resetTime).toLocaleString('id-ID', {
+                  timeZone: 'Asia/Jakarta',
+                  dateStyle: 'long',
+                  timeStyle: 'short',
+                });
+              }
+            } catch (e) {
+              // fallback
+            }
+
+            if (percentage <= 20) {
+              notification += name + ' ' + percentage + '% ' + formattedResetTime + '\n';
+            }
+            // console.log('email: ', email, 'model: ', name, 'percentage: ', percentage, 'resetTime: ', resetTime);
 
             if (name.toLowerCase().includes('gemini') || name.toLowerCase().includes('claude')) {
               result.models[name] = { percentage, resetTime };
             }
           }
+        }
+
+        // ... inside method ...
+
+        if (notification !== '' && isActive) {
+          const titleSafe = (email || 'Quota Refreshed').replace(/"/g, '\\"');
+          // Escape double quotes in body
+          const bodySafe = notification.replace(/"/g, '\\"').replace(/\n/g, '\\r');
+
+          // Use osascript to display notification
+          const script = `display notification "${bodySafe}" with title "${titleSafe}" sound name "default"`;
+
+          exec(`osascript -e '${script}'`, (err: any) => {
+            if (err) {
+              console.error('Failed to send notification via osascript', err);
+            }
+          });
         }
 
         return result;

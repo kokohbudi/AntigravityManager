@@ -36,7 +36,7 @@ function getQuotaText(account: CloudAccount | null, texts: any): string[] {
   return lines;
 }
 
-export function initTray(mainWindow: BrowserWindow) {
+export async function initTray(mainWindow: BrowserWindow) {
   globalMainWindow = mainWindow;
 
   // PATCH 3: Destroy existing tray before creating new one (prevents zombie tray icons)
@@ -85,7 +85,20 @@ export function initTray(mainWindow: BrowserWindow) {
     }
   });
 
-  updateTrayMenu(null);
+  // Initial Load of Active Account
+  try {
+    const accounts = await CloudAccountRepo.getAccounts();
+    const activeAccount = accounts.find((a) => a.is_active) || null;
+    if (activeAccount) {
+      logger.info(`Tray: Initialized with active account: ${activeAccount.email}`);
+    } else {
+      logger.info('Tray: No active account found on init');
+    }
+    updateTrayMenu(activeAccount);
+  } catch (e) {
+    logger.error('Tray: Failed to load initial account', e);
+    updateTrayMenu(null);
+  }
 }
 
 export function updateTrayMenu(account: CloudAccount | null, language?: string) {
@@ -146,7 +159,7 @@ export function updateTrayMenu(account: CloudAccount | null, language?: string) 
 
           logger.info(`Tray: Refreshing quota for ${current.email}`);
 
-          const quota = await GoogleAPIService.fetchQuota(current.token.access_token);
+          const quota = await GoogleAPIService.fetchQuota(current.token.access_token, current.email, true);
           await CloudAccountRepo.updateQuota(current.id, quota);
 
           // Reload account to get updated obj

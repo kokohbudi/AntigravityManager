@@ -1,4 +1,4 @@
-import { isEmpty } from 'lodash-es';
+import { isEmpty } from 'lodash';
 /**
  * Decode Base64-encoded signature if present
  * Gemini sends Base64, Claude expects raw string

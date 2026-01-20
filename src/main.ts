@@ -151,7 +151,7 @@ app.on('child-process-gone', (event, details) => {
 
 app.on('before-quit', () => {
   isQuitting = true;
-logger.info('App before-quit event triggered: isQuitting set to true');
+  logger.info('App before-quit event triggered: isQuitting set to true');
 });
 
 app.on('will-quit', (event) => {
@@ -271,7 +271,7 @@ app
   .then(async () => {
     logger.info('Step: Startup Complete');
     if (globalMainWindow) {
-      initTray(globalMainWindow);
+      await initTray(globalMainWindow);
     }
   })
   .catch((error) => {

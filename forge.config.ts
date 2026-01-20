@@ -22,6 +22,7 @@ const config: ForgeConfig = {
     name: 'Antigravity Manager',
     executableName: 'antigravity-manager',
     icon: 'images/icon', // Electron Forge automatically adds .icns/.ico
+    appBundleId: 'com.draculabo.antigravitymanager',
   },
   rebuildConfig: {},
   hooks: {
@@ -104,17 +105,17 @@ const config: ForgeConfig = {
     }),
     ...(!isStartCommand
       ? [
-          new AutoUnpackNativesPlugin({}),
-          new FusesPlugin({
-            version: FuseVersion.V1,
-            [FuseV1Options.RunAsNode]: false,
-            [FuseV1Options.EnableCookieEncryption]: true,
-            [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
-            [FuseV1Options.EnableNodeCliInspectArguments]: false,
-            [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-            [FuseV1Options.OnlyLoadAppFromAsar]: true,
-          }),
-        ]
+        new AutoUnpackNativesPlugin({}),
+        new FusesPlugin({
+          version: FuseVersion.V1,
+          [FuseV1Options.RunAsNode]: false,
+          [FuseV1Options.EnableCookieEncryption]: true,
+          [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+          [FuseV1Options.EnableNodeCliInspectArguments]: false,
+          [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+          [FuseV1Options.OnlyLoadAppFromAsar]: true,
+        }),
+      ]
       : []),
   ],
 };
