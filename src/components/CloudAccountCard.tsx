@@ -173,11 +173,20 @@ export function CloudAccountCard({
                 <span className="text-muted-foreground max-w-[120px] truncate" title={modelName}>
                   {modelName.replace('models/', '')}
                 </span>
-                <div className="flex items-center gap-2">
-                  <span className={`font-mono font-bold ${getQuotaColor(info.percentage)}`}>
-                    {info.percentage}%
-                  </span>
-                  <span className="text-muted-foreground text-xs">{t('cloud.card.left')}</span>
+                <div className="flex flex-col items-end">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-mono font-bold ${getQuotaColor(info.percentage)}`}>
+                      {info.percentage}%
+                    </span>
+                    <span className="text-muted-foreground text-xs">{t('cloud.card.left')}</span>
+                  </div>
+                  {info.resetTime && (
+                    <span className="text-muted-foreground text-[10px]">
+                      {t('cloud.card.resetTime', {
+                        time: formatDistanceToNow(new Date(info.resetTime), { addSuffix: true }),
+                      })}
+                    </span>
+                  )}
                 </div>
               </div>
             ))

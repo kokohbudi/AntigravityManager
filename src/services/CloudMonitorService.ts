@@ -2,6 +2,7 @@ import { CloudAccountRepo } from '../ipc/database/cloudHandler';
 import { GoogleAPIService } from './GoogleAPIService';
 import { AutoSwitchService } from './AutoSwitchService';
 import { logger } from '../utils/logger';
+import { updateTrayMenu } from '@/ipc/tray/handler';
 
 export class CloudMonitorService {
   private static intervalId: NodeJS.Timeout | null = null;
@@ -58,10 +59,6 @@ export class CloudMonitorService {
         // We re-fetch to see if it is still active to be safe
         const freshAccount = await CloudAccountRepo.getAccount(account.id);
         if (freshAccount && freshAccount.is_active) {
-          // Check if tray handler is available (it is in ipc/tray)
-          // We use require to avoid potential circular dependency issues at top-level if any,
-          // though likely fine.
-          const { updateTrayMenu } = require('../ipc/tray/handler');
           updateTrayMenu(freshAccount);
         }
       } catch (error) {

@@ -208,6 +208,7 @@ i18n
               refresh: 'Refresh Quota',
               delete: 'Delete Account',
               noQuota: 'No quota data',
+              resetTime: 'Reset: {{time}}',
             },
             list: {
               noAccounts: 'No cloud accounts added yet.',
@@ -480,6 +481,7 @@ i18n
               refresh: '刷新配额',
               delete: '删除账号',
               noQuota: '无配额数据',
+              resetTime: '重置: {{time}}',
             },
             list: {
               noAccounts: '暂无云账号。',
