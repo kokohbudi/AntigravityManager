@@ -111,7 +111,7 @@ export class AutoSwitchService {
   static isAccountDepleted(account: CloudAccount): boolean {
     if (!account.quota) return false; // Unknown, assume fine or let fetchQuota find out
     // Threshold = 5%
-    const THRESHOLD = 5;
-    return Object.values(account.quota.models).some((m) => m.percentage < THRESHOLD);
+    const THRESHOLD = 20;
+    return Object.values(account.quota.models).some((m) => m.percentage <= THRESHOLD);
   }
 }
